@@ -282,7 +282,12 @@ class Fetch():
                     net_passing_yards = stats_values.get('netPassingYards', 'NA')
                     # For statistics requiring special handling or parsing
                     completions_attempts = stats_values.get('completionAttempts', '0-0')
-                    completions, attempts = [int(x) for x in completions_attempts.split('-')]
+                    if '/' in completions_attempts:
+                        completions, attempts = [int(x) for x in completions_attempts.split('/')]
+                    elif '-' in completions_attempts:
+                        completions, attempts = [int(x) for x in completions_attempts.split('-')]
+                    else:
+                        completions, attempts = 0, 0  # Fallback if no valid separator is found
                     yards_per_pass = stats_values.get('yardsPerPass', 'NA')
                     interceptions_thrown = stats_values.get('interceptions', 'NA')
                     sacks_yards_lost = stats_values.get('sacksYardsLost', 'NA')
@@ -814,7 +819,6 @@ class Fetch():
                 team_list = []
 
                 for x in data['boxscore']['players']:
-                    pprint(x)
                     team = x['team']['displayName']
                     team_list.append(team)
 
@@ -869,8 +873,114 @@ class Fetch():
         else:
             return fumble_df
 
-    def defensive_boxscore(self):
-        pass
+    def defensive_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
+
+        defensive_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'total_tackles': [],
+                       'solo_tackles': [], 'sacks': [], 'tackles_for_loss':[], 'passes_defended':[],
+                       'qb_hits':[], 'defensive_touchdowns':[]}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                team_list = []
+
+                for x in data['boxscore']['players']:
+                    team = x['team']['displayName']
+                    team_list.append(team)
+
+                for x in data['boxscore']['players'][0]['statistics'][4]['athletes']:
+                    team = team_list[0]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    total_tackles = x['stats'][0]
+                    solo_tackles = x['stats'][1]
+                    sacks = x['stats'][2]
+                    tackles_for_loss = x['stats'][3]
+                    passes_defended = x['stats'][4]
+                    qb_hits = x['stats'][5]
+                    defensive_touchdowns = x['stats'][6]
+
+                    defensive_dict['date'].append(date)
+                    defensive_dict['team'].append(team)
+                    defensive_dict['name'].append(name)
+                    defensive_dict['id'].append(id)
+                    defensive_dict['number'].append(number)
+                    defensive_dict['total_tackles'].append(total_tackles)
+                    defensive_dict['solo_tackles'].append(solo_tackles)
+                    defensive_dict['sacks'].append(sacks)
+                    defensive_dict['tackles_for_loss'].append(tackles_for_loss)
+                    defensive_dict['passes_defended'].append(passes_defended)
+                    defensive_dict['qb_hits'].append(qb_hits)
+                    defensive_dict['defensive_touchdowns'].append(defensive_touchdowns)
+
+
+                for x in data['boxscore']['players'][1]['statistics'][4]['athletes']:
+                    team = team_list[1]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    total_tackles = x['stats'][0]
+                    solo_tackles = x['stats'][1]
+                    sacks = x['stats'][2]
+                    tackles_for_loss = x['stats'][3]
+                    passes_defended = x['stats'][4]
+                    qb_hits = x['stats'][5]
+                    defensive_touchdowns = x['stats'][6]
+
+                    defensive_dict['date'].append(date)
+                    defensive_dict['team'].append(team)
+                    defensive_dict['name'].append(name)
+                    defensive_dict['id'].append(id)
+                    defensive_dict['number'].append(number)
+                    defensive_dict['total_tackles'].append(total_tackles)
+                    defensive_dict['solo_tackles'].append(solo_tackles)
+                    defensive_dict['sacks'].append(sacks)
+                    defensive_dict['tackles_for_loss'].append(tackles_for_loss)
+                    defensive_dict['passes_defended'].append(passes_defended)
+                    defensive_dict['qb_hits'].append(qb_hits)
+                    defensive_dict['defensive_touchdowns'].append(defensive_touchdowns)
+
+        defensive_df = pd.DataFrame(defensive_dict)
+
+        columns_to_float = ['total_tackles', 'solo_tackles', 'sacks', 'tackles_for_loss', 'passes_defended', 'qb_hits', 'defensive_touchdowns']
+        defensive_df[columns_to_float] = defensive_df[columns_to_float].astype(float)
+
+        defensive_df['assisted_tackles'] = defensive_df['total_tackles'] - defensive_df['solo_tackles']
+
+        defensive_pivot = defensive_df.groupby('name').agg({'total_tackles': ['mean', 'sum'],
+                                                            'solo_tackles': ['mean', 'sum'],
+                                                            'assisted_tackles': ['mean'],
+                                                            'sacks': ['mean', 'sum'],
+                                                            'tackles_for_loss': ['mean', 'sum'],
+                                                            'passes_defended': ['mean', 'sum'],
+                                                            'qb_hits': ['mean', 'sum'],
+                                                            'defensive_touchdowns': ['mean', 'sum']
+                                                            }).reset_index()
+
+        defensive_pivot.columns = ['_'.join(col).strip() for col in defensive_pivot.columns.values]
+
+        if pivot == True:
+            return defensive_pivot
+        else:
+            return defensive_df
 
     def interception_boxscore(self):
         pass
