@@ -786,8 +786,88 @@ class Fetch():
         else:
             return receiving_df
 
-    def fumble_boxscore(self):
-        pass
+    def fumble_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
+
+        fumble_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'fumbles': [],
+                          'fumbles_lost': [], 'fumbles_recovered': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                team_list = []
+
+                for x in data['boxscore']['players']:
+                    pprint(x)
+                    team = x['team']['displayName']
+                    team_list.append(team)
+
+                for x in data['boxscore']['players'][0]['statistics'][3]['athletes']:
+                    team = team_list[0]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    fumbles = x['stats'][0]
+                    fumbles_lost = x['stats'][1]
+                    fumbles_recovered = x['stats'][2]
+                    fumble_dict['date'].append(date)
+                    fumble_dict['team'].append(team)
+                    fumble_dict['name'].append(name)
+                    fumble_dict['id'].append(id)
+                    fumble_dict['number'].append(number)
+                    fumble_dict['fumbles'].append(fumbles)
+                    fumble_dict['fumbles_lost'].append(fumbles_lost)
+                    fumble_dict['fumbles_recovered'].append(fumbles_recovered)
+
+                for x in data['boxscore']['players'][1]['statistics'][3]['athletes']:
+                    team = team_list[1]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    fumbles = x['stats'][0]
+                    fumbles_lost = x['stats'][1]
+                    fumbles_recovered = x['stats'][2]
+                    fumble_dict['date'].append(date)
+                    fumble_dict['team'].append(team)
+                    fumble_dict['name'].append(name)
+                    fumble_dict['id'].append(id)
+                    fumble_dict['number'].append(number)
+                    fumble_dict['fumbles'].append(fumbles)
+                    fumble_dict['fumbles_lost'].append(fumbles_lost)
+                    fumble_dict['fumbles_recovered'].append(fumbles_recovered)
+
+        fumble_df = pd.DataFrame(fumble_dict)
+
+        columns_to_int = ['fumbles', 'fumbles_lost', 'fumbles_recovered']
+        fumble_df[columns_to_int] = fumble_df[columns_to_int].astype(int)
+
+        fumble_pivot = fumble_df.groupby('name').agg({'fumbles': ['mean', 'sum'],
+                                                            'fumbles_lost': ['mean', 'sum'],
+                                                            'fumbles_recovered': ['mean', 'sum']
+                                                            }).reset_index()
+
+        fumble_pivot.columns = ['_'.join(col).strip() for col in fumble_pivot.columns.values]
+
+        if pivot == True:
+            return fumble_pivot
+        else:
+            return fumble_df
 
     def defensive_boxscore(self):
         pass
