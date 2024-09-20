@@ -982,19 +982,322 @@ class Fetch():
         else:
             return defensive_df
 
-    def interception_boxscore(self):
+    def interception_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
+
+        # 'keys': ['interceptions',
+        #          'interceptionYards',
+        #          'interceptionTouchdowns'],
+
+        interception_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'interceptions': [],
+                          'interception_yards': [], 'interception_touchdowns': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                team_list = []
+
+                for x in data['boxscore']['players']:
+                    team = x['team']['displayName']
+                    team_list.append(team)
+
+                for x in data['boxscore']['players'][0]['statistics'][5]['athletes']:
+                    team = team_list[0]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    interceptions = x['stats'][0]
+                    interception_yards = x['stats'][1]
+                    interception_touchdowns = x['stats'][2]
+
+                    interception_dict['date'].append(date)
+                    interception_dict['team'].append(team)
+                    interception_dict['name'].append(name)
+                    interception_dict['id'].append(id)
+                    interception_dict['number'].append(number)
+                    interception_dict['interceptions'].append(interceptions)
+                    interception_dict['interception_yards'].append(interception_yards)
+                    interception_dict['interception_touchdowns'].append(interception_touchdowns)
+
+                for x in data['boxscore']['players'][1]['statistics'][5]['athletes']:
+                    team = team_list[1]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    interceptions = x['stats'][0]
+                    interception_yards = x['stats'][1]
+                    interception_touchdowns = x['stats'][2]
+
+                    interception_dict['date'].append(date)
+                    interception_dict['team'].append(team)
+                    interception_dict['name'].append(name)
+                    interception_dict['id'].append(id)
+                    interception_dict['number'].append(number)
+                    interception_dict['interceptions'].append(interceptions)
+                    interception_dict['interception_yards'].append(interception_yards)
+                    interception_dict['interception_touchdowns'].append(interception_touchdowns)
+
+
+        interception_df = pd.DataFrame(interception_dict)
+
+        columns_to_int = ['interceptions', 'interception_yards', 'interception_touchdowns']
+        interception_df[columns_to_int] = interception_df[columns_to_int].astype(int)
+
+
+        interception_pivot = interception_df.groupby('name').agg({'interceptions': ['mean', 'sum'],
+                                                            'interception_yards': ['mean', 'sum'],
+                                                            'interception_touchdowns': ['mean', 'sum']
+                                                            }).reset_index()
+
+        interception_pivot.columns = ['_'.join(col).strip() for col in interception_pivot.columns.values]
+
+        if pivot == True:
+            return interception_pivot
+        else:
+            return interception_df
+
+    def kick_return_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
+
+        # 'keys': ['kickReturns',
+        #          'kickReturnYards',
+        #          'yardsPerKickReturn',
+        #          'longKickReturn',
+        #          'kickReturnTouchdowns'],
+
+        kick_return_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'kick_returns': [],
+                             'kick_return_yards': [], 'yards_per_kick_return': [], 'longest_kick_return': [],
+                             'kick_return_touchdowns':[]}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                team_list = []
+
+                for x in data['boxscore']['players']:
+                    team = x['team']['displayName']
+                    team_list.append(team)
+
+                for x in data['boxscore']['players'][0]['statistics'][6]['athletes']:
+                    team = team_list[0]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    kick_returns = x['stats'][0]
+                    kick_return_yards = x['stats'][1]
+                    yards_per_kick_return = x['stats'][2]
+                    longest_kick_return = x['stats'][3]
+                    kick_return_touchdowns = x['stats'][4]
+
+                    kick_return_dict['date'].append(date)
+                    kick_return_dict['team'].append(team)
+                    kick_return_dict['name'].append(name)
+                    kick_return_dict['id'].append(id)
+                    kick_return_dict['number'].append(number)
+                    kick_return_dict['kick_returns'].append(kick_returns)
+                    kick_return_dict['kick_return_yards'].append(kick_return_yards)
+                    kick_return_dict['yards_per_kick_return'].append(yards_per_kick_return)
+                    kick_return_dict['longest_kick_return'].append(longest_kick_return)
+                    kick_return_dict['kick_return_touchdowns'].append(kick_return_touchdowns)
+
+                for x in data['boxscore']['players'][1]['statistics'][6]['athletes']:
+                    team = team_list[1]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    kick_returns = x['stats'][0]
+                    kick_return_yards = x['stats'][1]
+                    yards_per_kick_return = x['stats'][2]
+                    longest_kick_return = x['stats'][3]
+                    kick_return_touchdowns = x['stats'][4]
+
+                    kick_return_dict['date'].append(date)
+                    kick_return_dict['team'].append(team)
+                    kick_return_dict['name'].append(name)
+                    kick_return_dict['id'].append(id)
+                    kick_return_dict['number'].append(number)
+                    kick_return_dict['kick_returns'].append(kick_returns)
+                    kick_return_dict['kick_return_yards'].append(kick_return_yards)
+                    kick_return_dict['yards_per_kick_return'].append(yards_per_kick_return)
+                    kick_return_dict['longest_kick_return'].append(longest_kick_return)
+                    kick_return_dict['kick_return_touchdowns'].append(kick_return_touchdowns)
+
+        kick_return_df = pd.DataFrame(kick_return_dict)
+
+        columns_to_int = ['kick_returns', 'kick_return_yards', 'longest_kick_return', 'kick_return_touchdowns']
+        columns_to_float = ['yards_per_kick_return']
+        kick_return_df[columns_to_int] = kick_return_df[columns_to_int].astype(int)
+        kick_return_df[columns_to_float] = kick_return_df[columns_to_float].astype(float)
+
+        kick_return_pivot = kick_return_df.groupby('name').agg({'kick_returns': ['mean', 'sum'],
+                                                                'kick_return_yards': ['mean', 'sum'],
+                                                                'yards_per_kick_return': ['mean'],
+                                                                'longest_kick_return': ['mean', 'sum'],
+                                                                'kick_return_touchdowns': ['mean', 'sum']
+                                                                  }).reset_index()
+
+        kick_return_pivot.columns = ['_'.join(col).strip() for col in kick_return_pivot.columns.values]
+
+        if pivot == True:
+            return kick_return_pivot
+        else:
+            return kick_return_df
+
+    def punt_return_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
+
+        # 'keys': ['puntReturns',
+        #          'puntReturnYards',
+        #          'yardsPerPuntReturn',
+        #          'longPuntReturn',
+        #          'puntReturnTouchdowns'],
+
+        punt_return_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'punt_returns': [],
+                            'punt_return_yards': [], 'yards_per_punt_return': [], 'longest_punt_return': [],
+                            'punt_return_touchdowns': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                team_list = []
+
+                for x in data['boxscore']['players']:
+                    team = x['team']['displayName']
+                    team_list.append(team)
+
+                for x in data['boxscore']['players'][0]['statistics'][7]['athletes']:
+                    team = team_list[0]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    punt_returns = x['stats'][0]
+                    punt_return_yards = x['stats'][1]
+                    yards_per_punt_return = x['stats'][2]
+                    longest_punt_return = x['stats'][3]
+                    punt_return_touchdowns = x['stats'][4]
+
+                    punt_return_dict['date'].append(date)
+                    punt_return_dict['team'].append(team)
+                    punt_return_dict['name'].append(name)
+                    punt_return_dict['id'].append(id)
+                    punt_return_dict['number'].append(number)
+                    punt_return_dict['punt_returns'].append(punt_returns)
+                    punt_return_dict['punt_return_yards'].append(punt_return_yards)
+                    punt_return_dict['yards_per_punt_return'].append(yards_per_punt_return)
+                    punt_return_dict['longest_punt_return'].append(longest_punt_return)
+                    punt_return_dict['punt_return_touchdowns'].append(punt_return_touchdowns)
+
+                for x in data['boxscore']['players'][1]['statistics'][7]['athletes']:
+                    team = team_list[1]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    punt_returns = x['stats'][0]
+                    punt_return_yards = x['stats'][1]
+                    yards_per_punt_return = x['stats'][2]
+                    longest_punt_return = x['stats'][3]
+                    punt_return_touchdowns = x['stats'][4]
+
+                    punt_return_dict['date'].append(date)
+                    punt_return_dict['team'].append(team)
+                    punt_return_dict['name'].append(name)
+                    punt_return_dict['id'].append(id)
+                    punt_return_dict['number'].append(number)
+                    punt_return_dict['punt_returns'].append(punt_returns)
+                    punt_return_dict['punt_return_yards'].append(punt_return_yards)
+                    punt_return_dict['yards_per_punt_return'].append(yards_per_punt_return)
+                    punt_return_dict['longest_punt_return'].append(longest_punt_return)
+                    punt_return_dict['punt_return_touchdowns'].append(punt_return_touchdowns)
+
+
+        punt_return_df = pd.DataFrame(punt_return_dict)
+
+        columns_to_int = ['punt_returns', 'punt_return_yards', 'longest_punt_return', 'punt_return_touchdowns']
+        columns_to_float = ['yards_per_punt_return']
+        punt_return_df[columns_to_int] = punt_return_df[columns_to_int].astype(int)
+        punt_return_df[columns_to_float] = punt_return_df[columns_to_float].astype(float)
+
+        punt_return_pivot = punt_return_df.groupby('name').agg({'punt_returns': ['mean', 'sum'],
+                                                                'punt_return_yards': ['mean', 'sum'],
+                                                                'yards_per_punt_return': ['mean'],
+                                                                'longest_punt_return': ['mean', 'sum'],
+                                                                'punt_return_touchdowns': ['mean', 'sum']
+                                                                }).reset_index()
+
+        punt_return_pivot.columns = ['_'.join(col).strip() for col in punt_return_pivot.columns.values]
+
+        if pivot == True:
+            return punt_return_pivot
+        else:
+            return punt_return_df
+
+    def field_goal_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
+
+        # 'keys': ['fieldGoalsMade/fieldGoalAttempts',
+        #          'fieldGoalPct',
+        #          'longFieldGoalMade',
+        #          'extraPointsMade/extraPointAttempts',
+        #          'totalKickingPoints'],
+
         pass
 
-    def kick_return_boxscore(self):
-        pass
+    def punt_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
 
-    def punt_return_boxscore(self):
-        pass
+        # 'keys': ['punts',
+        #          'puntYards',
+        #          'grossAvgPuntYards',
+        #          'touchbacks',
+        #          'puntsInside20',
+        #          'longPunt']
 
-    def field_goal_boxscore(self):
-        pass
-
-    def punt_boxscore(self):
         pass
 
     def drives(self):
