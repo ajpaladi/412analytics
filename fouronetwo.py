@@ -1281,13 +1281,150 @@ class Fetch():
 
     def field_goal_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
 
-        # 'keys': ['fieldGoalsMade/fieldGoalAttempts',
-        #          'fieldGoalPct',
-        #          'longFieldGoalMade',
-        #          'extraPointsMade/extraPointAttempts',
-        #          'totalKickingPoints'],
+        field_goal_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'field_goals_made': [],
+                            'field_goals_attempted': [], 'field_goal_%': [], 'long_field_goal': [],
+                            'extra_points_made': [], 'extra_points_attempted':[], 'total_kicking_points':[]}
 
-        pass
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                team_list = []
+
+                for x in data['boxscore']['players']:
+                    team = x['team']['displayName']
+                    team_list.append(team)
+
+                for x in data['boxscore']['players'][0]['statistics'][8]['athletes']:
+                    team = team_list[0]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+
+                    field_goals_made_attempted = x['stats'][0]
+                    if '/' in field_goals_made_attempted:
+                        field_goals_made, field_goals_attempted = [int(x) for x in field_goals_made_attempted.split('/')]
+                    elif '-' in field_goals_made_attempted:
+                        field_goals_made, field_goals_attempted = [int(x) for x in field_goals_made_attempted.split('-')]
+                    else:
+                        field_goals_made, field_goals_attempted = 0, 0  # Fallback if no valid separator is found
+
+                    field_goal_percent = x['stats'][1]
+                    long_field_goal = x['stats'][2]
+
+                    extra_points_made_attempted = x['stats'][3]
+                    if '/' in extra_points_made_attempted:
+                        extra_points_made, extra_points_attempted = [int(x) for x in
+                                                                   extra_points_made_attempted.split('/')]
+                    elif '-' in extra_points_made_attempted:
+                        extra_points_made, extra_points_attempted = [int(x) for x in
+                                                                   extra_points_made_attempted.split('-')]
+                    else:
+                        extra_points_made, extra_points_attempted = 0, 0  # Fallback if no valid separator is found
+
+                    total_kicking_points = x['stats'][4]
+
+                    field_goal_dict['date'].append(date)
+                    field_goal_dict['team'].append(team)
+                    field_goal_dict['name'].append(name)
+                    field_goal_dict['id'].append(id)
+                    field_goal_dict['number'].append(number)
+                    field_goal_dict['field_goals_made'].append(field_goals_made)
+                    field_goal_dict['field_goals_attempted'].append(field_goals_attempted)
+                    field_goal_dict['field_goal_%'].append(field_goal_percent)
+                    field_goal_dict['long_field_goal'].append(long_field_goal)
+                    field_goal_dict['extra_points_made'].append(extra_points_made)
+                    field_goal_dict['extra_points_attempted'].append(extra_points_attempted)
+                    field_goal_dict['total_kicking_points'].append(total_kicking_points)
+
+
+                for x in data['boxscore']['players'][1]['statistics'][8]['athletes']:
+                    team = team_list[1]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+
+                    field_goals_made_attempted = x['stats'][0]
+                    if '/' in field_goals_made_attempted:
+                        field_goals_made, field_goals_attempted = [int(x) for x in
+                                                                   field_goals_made_attempted.split('/')]
+                    elif '-' in field_goals_made_attempted:
+                        field_goals_made, field_goals_attempted = [int(x) for x in
+                                                                   field_goals_made_attempted.split('-')]
+                    else:
+                        field_goals_made, field_goals_attempted = 0, 0  # Fallback if no valid separator is found
+
+                    field_goal_percent = x['stats'][1]
+                    long_field_goal = x['stats'][2]
+
+                    extra_points_made_attempted = x['stats'][3]
+                    if '/' in extra_points_made_attempted:
+                        extra_points_made, extra_points_attempted = [int(x) for x in
+                                                                     extra_points_made_attempted.split('/')]
+                    elif '-' in extra_points_made_attempted:
+                        extra_points_made, extra_points_attempted = [int(x) for x in
+                                                                     extra_points_made_attempted.split('-')]
+                    else:
+                        extra_points_made, extra_points_attempted = 0, 0  # Fallback if no valid separator is found
+
+                    total_kicking_points = x['stats'][4]
+
+                    field_goal_dict['date'].append(date)
+                    field_goal_dict['team'].append(team)
+                    field_goal_dict['name'].append(name)
+                    field_goal_dict['id'].append(id)
+                    field_goal_dict['number'].append(number)
+                    field_goal_dict['field_goals_made'].append(field_goals_made)
+                    field_goal_dict['field_goals_attempted'].append(field_goals_attempted)
+                    field_goal_dict['field_goal_%'].append(field_goal_percent)
+                    field_goal_dict['long_field_goal'].append(long_field_goal)
+                    field_goal_dict['extra_points_made'].append(extra_points_made)
+                    field_goal_dict['extra_points_attempted'].append(extra_points_attempted)
+                    field_goal_dict['total_kicking_points'].append(total_kicking_points)
+
+
+        field_goal_df = pd.DataFrame(field_goal_dict)
+
+        columns_to_int = ['field_goals_made', 'field_goals_attempted', 'long_field_goal', 'extra_points_made', 'extra_points_attempted', 'total_kicking_points']
+        columns_to_float = ['field_goal_%']
+        field_goal_df[columns_to_int] = field_goal_df[columns_to_int].astype(int)
+        field_goal_df[columns_to_float] = field_goal_df[columns_to_float].astype(float)
+
+        field_goal_df['extra_point_%'] = field_goal_df['extra_points_made'] / field_goal_df['extra_points_attempted']
+
+        field_goal_pivot = field_goal_df.groupby('name').agg({'field_goals_made': ['mean', 'sum'],
+                                                                'field_goals_attempted': ['mean', 'sum'],
+                                                                'field_goal_%': ['mean'],
+                                                                'long_field_goal': ['mean', 'sum'],
+                                                                'extra_points_made': ['mean', 'sum'],
+                                                                'extra_points_attempted': ['mean', 'sum'],
+                                                                'extra_point_%': ['mean'],
+                                                                'total_kicking_points': ['mean', 'sum']
+                                                                }).reset_index()
+
+        field_goal_pivot.columns = ['_'.join(col).strip() for col in field_goal_pivot.columns.values]
+
+        if pivot == True:
+            return field_goal_pivot
+        else:
+            return field_goal_df
+
 
     def punt_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
 
