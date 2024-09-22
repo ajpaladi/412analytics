@@ -3,7 +3,7 @@
   <component name="Black">
     <option name="executionMode" value="BINARY" />
     <option name="pathToExecutable" value="$USER_HOME$/anaconda3/bin/black" />
-    <option name="sdkUUID" value="5cce377b-d5eb-41c7-9bf1-0370953a7e72" />
+    <option name="sdkUUID" value="97a047a1-b4ae-4a6c-85ba-12ca7f2d9c9b" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="412analytics" project-jdk-type="Python SDK" />
 </project>

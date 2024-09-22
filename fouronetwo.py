@@ -1425,7 +1425,6 @@ class Fetch():
         else:
             return field_goal_df
 
-
     def punt_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
 
         # 'keys': ['punts',
@@ -1435,10 +1434,173 @@ class Fetch():
         #          'puntsInside20',
         #          'longPunt']
 
-        pass
+        punt_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'punts': [],
+                            'punt_yards': [], 'gross_avg_punt_yards': [], 'touchbacks': [],
+                            'punts_inside_20': [], 'longest_punt':[]}
 
-    def drives(self):
-        pass
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                team_list = []
+
+                for x in data['boxscore']['players']:
+                    team = x['team']['displayName']
+                    team_list.append(team)
+
+                for x in data['boxscore']['players'][0]['statistics'][9]['athletes']:
+                    team = team_list[0]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    punts = x['stats'][0]
+                    punt_yards = x['stats'][1]
+                    gross_avg_punt_yards = x['stats'][2]
+                    touchbacks = x['stats'][3]
+                    punts_inside_20 = x['stats'][4]
+                    longest_punt = x['stats'][5]
+
+                    punt_dict['date'].append(date)
+                    punt_dict['team'].append(team)
+                    punt_dict['name'].append(name)
+                    punt_dict['id'].append(id)
+                    punt_dict['number'].append(number)
+                    punt_dict['punts'].append(punts)
+                    punt_dict['punt_yards'].append(punt_yards)
+                    punt_dict['gross_avg_punt_yards'].append(gross_avg_punt_yards)
+                    punt_dict['touchbacks'].append(touchbacks)
+                    punt_dict['punts_inside_20'].append(punts_inside_20)
+                    punt_dict['longest_punt'].append(longest_punt)
+
+                for x in data['boxscore']['players'][1]['statistics'][9]['athletes']:
+                    team = team_list[1]
+                    name = x['athlete']['displayName']
+                    id = x['athlete']['id']
+                    number = x['athlete'].get('jersey', 'NA')
+                    punts = x['stats'][0]
+                    punt_yards = x['stats'][1]
+                    gross_avg_punt_yards = x['stats'][2]
+                    touchbacks = x['stats'][3]
+                    punts_inside_20 = x['stats'][4]
+                    longest_punt = x['stats'][5]
+
+                    punt_dict['date'].append(date)
+                    punt_dict['team'].append(team)
+                    punt_dict['name'].append(name)
+                    punt_dict['id'].append(id)
+                    punt_dict['number'].append(number)
+                    punt_dict['punts'].append(punts)
+                    punt_dict['punt_yards'].append(punt_yards)
+                    punt_dict['gross_avg_punt_yards'].append(gross_avg_punt_yards)
+                    punt_dict['touchbacks'].append(touchbacks)
+                    punt_dict['punts_inside_20'].append(punts_inside_20)
+                    punt_dict['longest_punt'].append(longest_punt)
+
+        punt_df = pd.DataFrame(punt_dict)
+
+        columns_to_int = ['punts', 'punt_yards', 'touchbacks', 'punts_inside_20', 'longest_punt']
+        columns_to_float = ['gross_avg_punt_yards']
+        punt_df[columns_to_int] = punt_df[columns_to_int].astype(int)
+        punt_df[columns_to_float] = punt_df[columns_to_float].astype(float)
+
+        punt_pivot = punt_df.groupby('name').agg({'punts': ['mean', 'sum'],
+                                                    'punt_yards': ['mean', 'sum'],
+                                                    'gross_avg_punt_yards':['mean'],
+                                                    'touchbacks': ['mean'],
+                                                    'punts_inside_20': ['mean', 'sum'],
+                                                    'longest_punt': ['mean', 'sum']
+                                                                }).reset_index()
+
+        punt_pivot.columns = ['_'.join(col).strip() for col in punt_pivot.columns.values]
+
+        if pivot == True:
+            return punt_pivot
+        else:
+            return punt_df
+
+    def drives(self,  year, week=None, season_type=None, team=None, pivot=None):
+
+        drive_dict = {'team': [], 'date':[], 'drive_id': [], 'description': [], 'start_time': [], 'end_time': [],
+                      'start_yardline': [], 'end_yardline': [], 'start_period': [], 'end_period': [],
+                      'time_elapsed': [], 'yards': [], 'score': [], 'offensive_plays': [],
+                      'result': [], 'display_result': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                for x in data['drives']['previous']:
+                    team = x['team']['displayName']
+                    drive_id = x['id']
+                    description = x['description']
+                    start_time = x['start']['clock']['displayValue']
+                    end_time = x.get('end', {}).get('clock', {}).get('displayValue', 'NA')
+                    start_yardline = x['start']['text']
+                    end_yardline = x['end']['text']
+                    start_period = x['start']['period']['number']
+                    end_period = x['end']['period']['number']
+                    time_elapsed = x['timeElapsed']['displayValue']
+                    yards = x['yards']
+                    score = x['isScore']
+                    offensive_plays = x['offensivePlays']
+                    result = x['result']
+                    display_result = x['displayResult']
+
+                    drive_dict['team'].append(team)
+                    drive_dict['date'].append(date)
+                    drive_dict['drive_id'].append(drive_id)
+                    drive_dict['description'].append(description)
+                    drive_dict['start_time'].append(start_time)
+                    drive_dict['end_time'].append(end_time)
+                    drive_dict['start_yardline'].append(start_yardline)
+                    drive_dict['end_yardline'].append(end_yardline)
+                    drive_dict['start_period'].append(start_period)
+                    drive_dict['end_period'].append(end_period)
+
+                    drive_dict['time_elapsed'].append(time_elapsed)
+                    drive_dict['yards'].append(yards)
+                    drive_dict['score'].append(score)
+                    drive_dict['offensive_plays'].append(offensive_plays)
+                    drive_dict['result'].append(result)
+                    drive_dict['display_result'].append(display_result)
+
+        drive_df = pd.DataFrame(drive_dict)
+        drive_df = drive_df.sort_values(by = 'team', ascending = True)
+
+        return drive_df
 
     def plays(self):
         pass
