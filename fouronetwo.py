@@ -1602,8 +1602,84 @@ class Fetch():
 
         return drive_df
 
-    def plays(self):
-        pass
+    def plays(self, year, week=None, season_type=None, team=None, pivot=None):
+
+        play_dict = {'team': [], 'play_id': [], 'play_type_id': [], 'play_type': [], 'away_score': [], 'home_score': [],
+                     'clock': [], 'start_distance': [], 'start_down': [], 'start_yardline': [], 'start_yards_to_endzone': [],
+                     'end_distance': [], 'end_down': [], 'end_yardline': [], 'end_yards_to_endzone': [], 'modified': [], 'period': [],
+                     'priority': [], 'scoring_play': [], 'start_yardage': [], 'text': [], 'wall_clock': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+            completed_games = completed_games[completed_games.id == id]
+
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+
+                for x in data['drives']['previous']:
+                    team = x['team']['displayName']
+                    for play in x['plays']:
+                        play_id = play['id']
+                        play_type_id = play.get('type', {}).get('id', 'NA')
+                        play_type = play.get('type', {}).get('text', 'NA')
+                        away_score = play['awayScore']
+                        home_score = play['homeScore']
+                        clock = play['clock']['displayValue']
+                        start_distance = play['start']['distance']
+                        start_down = play['start']['down']
+                        start_yardline = play['start']['yardLine']
+                        start_yards_to_endzone = play['start']['yardsToEndzone']
+                        end_distance = play['end']['distance']
+                        end_down = play['end']['down']
+                        end_yardline = play['end']['yardLine']
+                        end_yards_to_endzone = play['end']['yardsToEndzone']
+                        modified = play['modified']
+                        period = play['period']
+                        priority = play['priority']
+                        scoring_play = play['scoringPlay']
+                        start_yardage = play['statYardage']
+                        text = play['text']
+                        wall_clock = play.get('wallclock', 'NA')
+                        play_dict['team'].append(team)
+                        play_dict['play_id'].append(play_id)
+                        play_dict['play_type_id'].append(play_type_id)
+                        play_dict['play_type'].append(play_type)
+                        play_dict['away_score'].append(away_score)
+                        play_dict['home_score'].append(home_score)
+                        play_dict['clock'].append(clock)
+                        play_dict['start_distance'].append(start_distance)
+                        play_dict['start_down'].append(start_down)
+                        play_dict['start_yardline'].append(start_yardline)
+                        play_dict['start_yards_to_endzone'].append(start_yards_to_endzone)
+                        play_dict['end_distance'].append(end_distance)
+                        play_dict['end_down'].append(end_down)
+                        play_dict['end_yardline'].append(end_yardline)
+                        play_dict['end_yards_to_endzone'].append(end_yards_to_endzone)
+                        play_dict['modified'].append(modified)
+                        play_dict['period'].append(period)
+                        play_dict['priority'].append(priority)
+                        play_dict['scoring_play'].append(scoring_play)
+                        play_dict['start_yardage'].append(start_yardage)
+                        play_dict['text'].append(text)
+                        play_dict['wall_clock'].append(wall_clock)
+
+        plays_df = pd.DataFrame(play_dict)
+
+        return plays_df
+
 
     def teams(self):
         pass
