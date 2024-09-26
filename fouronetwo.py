@@ -1680,6 +1680,59 @@ class Fetch():
 
         return plays_df
 
+    def videos(self, year, week=None, season_type=None, team=None):
+
+        video_dict = {'id': [], 'video_id':[], 'date':[], 'home_team':[], 'away_team':[], 'headline': [], 'description': [], 'link': [],
+                      'duration': [], 'publish_date': [],'source': [], 'thumbnail': [], 'coverage_type': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+            completed_games = completed_games[completed_games.id == id]
+
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                for x in data['videos']:
+                    description = x['description']
+                    duration = x['duration']
+                    headline = x['headline']
+                    video_id = x['id']
+                    link = x['links']['source']['mezzanine']['href']
+                    publish_date = x['originalPublishDate']
+                    source = x['source']
+                    thumbnail = x['thumbnail']
+                    coverage_type = x['tracking']['coverageType']
+                    video_dict['id'].append(id)
+                    video_dict['video_id'].append(video_id)
+                    video_dict['date'].append(date)
+                    video_dict['home_team'].append(home_team)
+                    video_dict['away_team'].append(away_team)
+                    video_dict['headline'].append(headline)
+                    video_dict['description'].append(description)
+                    video_dict['link'].append(link)
+                    video_dict['duration'].append(duration)
+                    video_dict['publish_date'].append(publish_date)
+                    video_dict['source'].append(source)
+                    video_dict['thumbnail'].append(thumbnail)
+                    video_dict['coverage_type'].append(coverage_type)
+
+        video_df = pd.DataFrame(video_dict)
+        return video_df
+
+    def images(self, year, week=None, season_type=None, team=None):
+        pass
 
     def teams(self):
         pass
