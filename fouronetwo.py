@@ -12,14 +12,14 @@ class Fetch():
 
         if not season_type and not week:
             season_type = 2
-            weeks = list(range(1, 19))
+            weeks = list(range(1, 19)) if year > 2020 else list(range(1, 18))
         elif week and not season_type:
             weeks = str(week)
             season_type = 2
         elif season_type == 1:
             weeks = list(range(1, 5))
         elif season_type == 2:
-            weeks = list(range(1, 19))
+            weeks = list(range(1, 19)) if year > 2020 else list(range(1, 18))
         elif season_type == 3:
             weeks = list(range(1, 6))
         else:
@@ -30,10 +30,12 @@ class Fetch():
 
         for w in weeks:
             url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=1000&dates={year}&seasontype={season_type}&week={w}'
+            print(url)
             response = requests.get(url)
             if response.status_code == 200:
                 data = response.json()
                 df = pd.json_normalize(data['events'])
+                df.to_csv('/Users/andrewpaladino/Downloads/events.csv')
                 df = df[(df['status.type.name'] == 'STATUS_FINAL')]
                 df['id'] = df['id'].astype(str)
 
@@ -1536,7 +1538,7 @@ class Fetch():
 
     def drives(self,  year, week=None, season_type=None, team=None, pivot=None):
 
-        drive_dict = {'team': [], 'date':[], 'drive_id': [], 'description': [], 'start_time': [], 'end_time': [],
+        drive_dict = {'team': [], 'home_team':[], 'away_team':[], 'date':[], 'drive_id': [], 'description': [], 'start_time': [], 'end_time': [],
                       'start_yardline': [], 'end_yardline': [], 'start_period': [], 'end_period': [],
                       'time_elapsed': [], 'yards': [], 'score': [], 'offensive_plays': [],
                       'result': [], 'display_result': []}
@@ -1580,6 +1582,8 @@ class Fetch():
                     display_result = x['displayResult']
 
                     drive_dict['team'].append(team)
+                    drive_dict['home_team'].append(home_team)
+                    drive_dict['away_team'].append(away_team)
                     drive_dict['date'].append(date)
                     drive_dict['drive_id'].append(drive_id)
                     drive_dict['description'].append(description)
@@ -1598,9 +1602,124 @@ class Fetch():
                     drive_dict['display_result'].append(display_result)
 
         drive_df = pd.DataFrame(drive_dict)
+
+        def assign_points_and_opponent(row):
+            if row['team'] == row['home_team']:
+                row['opponent'] = row['away_team']
+            else:
+                row['opponent'] = row['home_team']
+            return row
+
+        drive_df = drive_df.apply(assign_points_and_opponent, axis=1)
+        drive_df = drive_df.drop(columns = ['home_team', 'away_team'])
         drive_df = drive_df.sort_values(by = 'team', ascending = True)
 
-        return drive_df
+
+        columns_to_int = ['yards', 'offensive_plays']
+        drive_df[columns_to_int] = drive_df[columns_to_int].astype(int)
+        drive_df['time_elapsed'] = '00:' + drive_df['time_elapsed']
+        drive_df['time_elapsed'] = pd.to_timedelta(drive_df['time_elapsed'])
+
+        drive_pivot = drive_df.groupby('team').agg({'yards': ['mean', 'sum'],
+                                                  'offensive_plays': ['mean', 'sum'],
+                                                  'time_elapsed': ['mean', 'sum']
+                                                  }).reset_index()
+
+        drive_pivot.columns = ['_'.join(col).strip() for col in drive_pivot.columns.values]
+
+        if pivot == True:
+            return drive_pivot
+        else:
+            return drive_df
+
+    def offensive_drive_summary(self, year=None, week=None, season_type=None, team=None, agg_method=None):
+
+        #### offensive drive summary
+        #
+        # drives = self.drives(year=year, week=week, season_type=season_type, team=None)
+        # result_count = drives.groupby(['team', 'display_result']).size().reset_index(name='count')
+        # total_drives = drives.groupby('team').size().reset_index(name='total_drives')
+        # result_percent = pd.merge(result_count, total_drives, on='team')
+        # result_percent['percentage'] = (result_percent['count'] / result_percent['total_drives']) * 100
+        # pivot_table = result_percent.pivot_table(index='team', columns='display_result', values='percentage', fill_value=0)
+        #
+        # drives['is_scoring'] = drives['display_result'].isin(['Touchdown', 'Field Goal'])
+        # scoring_drives = drives.groupby('team')['is_scoring'].mean().reset_index(name='%_scoring_drives')
+        # scoring_drives['%_scoring_drives'] *= 100  # Convert to percentage
+        # final_table = pd.merge(pivot_table, scoring_drives, on='team')
+
+        drives = self.drives(year=year, week=week, season_type=season_type, team=None)
+
+        # Determine whether to aggregate weekly or yearly
+        if agg_method == 'weekly':
+            # Assume you have a 'date' or 'week' column in the dataframe
+            group_cols = ['team', 'date']  # Using 'week' as an example, replace with 'date' if needed
+        else:
+            group_cols = ['team']
+
+        result_count = drives.groupby(group_cols + ['display_result']).size().reset_index(name='count')
+        total_drives = drives.groupby(group_cols).size().reset_index(name='total_drives')
+        result_percent = pd.merge(result_count, total_drives, on=group_cols)
+        result_percent['percentage'] = (result_percent['count'] / result_percent['total_drives']) * 100
+        pivot_table = result_percent.pivot_table(index=group_cols, columns='display_result', values='percentage',
+                                                 fill_value=0)
+
+        drives['is_scoring'] = drives['display_result'].isin(['Touchdown', 'Field Goal'])
+        scoring_drives = drives.groupby(group_cols)['is_scoring'].mean().reset_index(name='%_scoring_drives')
+        scoring_drives['%_scoring_drives'] *= 100  # Convert to percentage
+
+        final_table = pd.merge(pivot_table, scoring_drives, on=group_cols)
+        final_table = final_table.rename(columns={'%_scoring_drives': 'Scoring Drives (%)'})
+
+        return final_table
+
+    def defensive_drive_summary(self, year=None, week=None, season_type=None, team=None, agg_method=None):
+
+        drives = self.drives(year=year, week=week, season_type=season_type, team=None)
+
+        # Determine whether to aggregate weekly or yearly
+        if agg_method == 'weekly':
+            # Assume you have a 'date' or 'week' column in the dataframe
+            group_cols = ['opponent', 'date']  # Using 'week' as an example, replace with 'date' if needed
+        else:
+            group_cols = ['opponent']
+
+        result_count = drives.groupby(group_cols + ['display_result']).size().reset_index(name='count')
+        total_drives = drives.groupby(group_cols).size().reset_index(name='total_drives')
+        result_percent = pd.merge(result_count, total_drives, on=group_cols)
+        result_percent['percentage'] = (result_percent['count'] / result_percent['total_drives']) * 100
+        pivot_table = result_percent.pivot_table(index=group_cols, columns='display_result', values='percentage',
+                                                 fill_value=0)
+
+        drives['is_scoring'] = drives['display_result'].isin(['Touchdown', 'Field Goal'])
+        scoring_drives = drives.groupby(group_cols)['is_scoring'].mean().reset_index(name='%_scoring_drives')
+        scoring_drives['%_scoring_drives'] *= 100  # Convert to percentage
+
+        final_table = pd.merge(pivot_table, scoring_drives, on=group_cols)
+        final_table = final_table.rename(columns={'%_scoring_drives': 'Scoring Drives (%)'})
+
+        final_table = final_table.rename(columns={'opponent': 'defense',
+                                                  'Blocked Punt': 'blocked_punt_%',
+                                                  'Blocked Punt Touchdown': 'blocked_punt_touchdown_%',
+                                                  'Downs': 'turnover_on_downs_%',
+                                                  'Field Goal': 'field_goal_prevention_%',
+                                                  'Fumble': 'forced_fumble_%',
+                                                  'Fumble Touchdown': 'fumble_return_touchdown_%',
+                                                  'Interception': 'interception_%',
+                                                  'Interception Touchdown': 'interception_touchdown_%',
+                                                  'Missed FG': 'missed_fg_%',
+                                                  'Punt': 'forced_punt_%',
+                                                  'Punt Return Touchdown': 'punt_return_touchdown_%',
+                                                  'Safety': 'forced_safety %',
+                                                  'Touchdown': 'touchdown_prevention_%',
+                                                  'Scoring Drives (%)': 'point_prevention_%'})
+
+        final_table = final_table.drop(columns = ['End of Game', 'End of Half'])
+        final_table['field_goal_prevention_%'] = (1 - (final_table['field_goal_prevention_%'] / 100)) * 100
+        final_table['touchdown_prevention_%'] = (1 - (final_table['touchdown_prevention_%'] / 100)) * 100
+        final_table['point_prevention_%'] = (1 - (final_table['point_prevention_%'] / 100)) * 100
+
+        return final_table
 
     def plays(self, year, week=None, season_type=None, team=None, pivot=None):
 
@@ -1732,6 +1851,96 @@ class Fetch():
         return video_df
 
     def images(self, year, week=None, season_type=None, team=None):
+        pass
+
+    def officials(self, year, week=None, season_type=None, team=None):
+
+        ### retrieves game officials
+
+        officiating_dict = {'id': [], 'date': [], 'home_team': [], 'away_team': [], 'name': [], 'position': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+            completed_games = completed_games[completed_games.id == id]
+
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                for x in data['gameInfo']['officials']:
+                    name = x['displayName']
+                    position = x['position']['name']
+                    officiating_dict['id'].append(id)
+                    officiating_dict['date'].append(date)
+                    officiating_dict['home_team'].append(home_team)
+                    officiating_dict['away_team'].append(away_team)
+                    officiating_dict['name'].append(name)
+                    officiating_dict['position'].append(position)
+
+        officiating_df = pd.DataFrame(officiating_dict)
+        return officiating_df
+
+    def officiating(self, year, week=None, season_type=None, team=None):
+
+        officials = self.officials(year=year, week=week, season_type=season_type, team=team)
+        boxscore = self.boxscore(year=year, week=week, season_type=season_type, team=team)
+
+        ### retrieves officiating statistics by refereee, by team, spinoff of boxscore + officials methods (marrying the two)
+
+        pass
+
+    def win_probability(self, year, week=None, season_type=None, team=None):
+
+        w_prob_dict = {'id': [], 'date': [], 'home_team': [], 'away_team': [], 'home_win_%': [], 'play_id': []}
+
+        completed_games = self.completed_games(year=year, week=week, season_type=season_type, team=team)
+
+        for id, date, city, venue, home_team, away_team, home_score, away_score in tqdm(
+                zip(completed_games['id'].unique(),
+                    completed_games['date'],
+                    completed_games['city'],
+                    completed_games['venue'],
+                    completed_games['home_team'],
+                    completed_games['away_team'],
+                    completed_games['home_score'],
+                    completed_games['away_score']),
+                total=completed_games.shape[0]):
+
+            completed_games = completed_games[completed_games.id == id]
+
+            url = f'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={id}'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                for x in data['winprobability']:
+                    home_win_percentage = x['homeWinPercentage']
+                    play_id = x['playId']
+                    w_prob_dict['id'].append(id)
+                    w_prob_dict['date'].append(date)
+                    w_prob_dict['home_team'].append(home_team)
+                    w_prob_dict['away_team'].append(away_team)
+                    w_prob_dict['home_win_%'].append(home_win_percentage)
+                    w_prob_dict['play_id'].append(play_id)
+
+        w_prob_df = pd.DataFrame(w_prob_dict)
+        w_prob_df['away_win_%'] = 1 - w_prob_df['home_win_%']
+        w_prob_df['play_number'] = w_prob_df.groupby('date').cumcount() + 1
+
+        return w_prob_df
+
+    def game_news(self, year, week=None, season_type=None, team=None):
         pass
 
     def teams(self):
