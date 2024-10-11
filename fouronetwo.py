@@ -398,8 +398,12 @@ class Fetch():
         boxscore_team_df[columns_to_int] = boxscore_team_df[columns_to_int].astype(int)
         boxscore_team_df[columns_to_float] = boxscore_team_df[columns_to_float].astype(float)
 
+        boxscore_team_df['point_differential'] = boxscore_team_df['points'] - boxscore_team_df['points_allowed']
+        boxscore_team_df['result'] = ['W' if points > points_allowed else 'L' for points, points_allowed in zip(boxscore_team_df['points'], boxscore_team_df['points_allowed'])]
+
         boxscore_offense_pivot = boxscore_team_df.groupby('team').agg({'points': ['mean', 'sum'],
                                                            'points_allowed': ['mean', 'sum'],
+                                                           'point_differential': ['mean', 'sum'],
                                                            'first_downs': ['mean', 'sum'],
                                                            'passing_first_downs':  ['mean', 'sum'],
                                                            'rushing_first_downs': ['mean', 'sum'],
@@ -687,7 +691,7 @@ class Fetch():
         else:
             return rushing_df
 
-    def receiving_boxscore(self, year, week=None, season_type=None, team=None, pivot=None):
+    def receiving_boxscore(self, year, week=None, season_type=None, team=None, pivot=None, team_pivot=None):
 
         #### need to add in touchdown %
         receiving_dict = {'date': [], 'team': [], 'name': [], 'id': [], 'number': [], 'receptions': [],
@@ -777,6 +781,8 @@ class Fetch():
 
         receiving_df['catch_%'] = receiving_df['receptions'] / receiving_df['targets'] * 100
 
+        ###### player pivot #######
+
         receiving_pivot = receiving_df.groupby('name').agg({'receptions': ['mean', 'sum'],
                                                             'yards': ['mean', 'sum'],
                                                             'yards_per_reception': ['mean'],
@@ -788,8 +794,21 @@ class Fetch():
 
         receiving_pivot.columns = ['_'.join(col).strip() for col in receiving_pivot.columns.values]
 
+        ####### team pivot #####
+
+        receiving_team_pivot = receiving_df.groupby('team').agg({'receptions': ['mean', 'sum'],
+                                                            'yards': ['mean', 'sum'],
+                                                            'yards_per_reception': ['mean'],
+                                                            'touchdowns': ['mean', 'sum'],
+                                                            'longest_reception': ['mean', 'sum'],
+                                                            'targets': ['mean', 'sum'],
+                                                            'catch_%': ['mean']
+                                                            }).reset_index()
+
         if pivot == True:
             return receiving_pivot
+        elif team_pivot == True:
+            return receiving_team_pivot
         else:
             return receiving_df
 
@@ -1938,7 +1957,21 @@ class Fetch():
         w_prob_df['away_win_%'] = 1 - w_prob_df['home_win_%']
         w_prob_df['play_number'] = w_prob_df.groupby('date').cumcount() + 1
 
-        return w_prob_df
+        plays = self.plays(year=year, week=week, season_type=season_type, team=team)
+        plays_probability = w_prob_df.merge(plays, on='play_id')
+
+        def assign_points_and_opponent(row):
+            if row['team'] == row['home_team']:
+                row['team_win_%'] = row['home_win_%']
+                row['opponent_win_%'] = row['away_win_%']
+            else:
+                row['team_win_%'] = row['away_win_%']
+                row['opponent_win_%'] = row['home_win_%']
+            return row
+
+        plays_probability = plays_probability.apply(assign_points_and_opponent, axis=1)
+
+        return plays_probability
 
     def game_news(self, year, week=None, season_type=None, team=None):
         pass
@@ -1949,6 +1982,33 @@ class Fetch():
     def players(self):
         pass
 
+    def qb_epa(self, year=None, season_type=None, week=None):
+
+        if not season_type and not week:
+            season_type = 2
+            weeks = list(range(1, 19)) if year > 2020 else list(range(1, 18))
+        elif week and not season_type:
+            weeks = str(week)
+            season_type = 2
+        elif season_type == 1:
+            weeks = list(range(1, 5))
+        elif season_type == 2:
+            weeks = list(range(1, 19)) if year > 2020 else list(range(1, 18))
+        elif season_type == 3:
+            weeks = list(range(1, 6))
+        else:
+            season_type = season_type
+            weeks = week
+
+        total_completed = pd.DataFrame()
+
+        for w in weeks:
+            url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/types/{season_type}/weeks/{week}/qbr/10000'
+
+        pass
+
+    def diff_mov_mol(self, year=None):
+        pass
 
 
 
