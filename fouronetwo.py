@@ -1653,19 +1653,6 @@ class Fetch():
 
     def offensive_drive_summary(self, year=None, week=None, season_type=None, team=None, agg_method=None):
 
-        #### offensive drive summary
-        #
-        # drives = self.drives(year=year, week=week, season_type=season_type, team=None)
-        # result_count = drives.groupby(['team', 'display_result']).size().reset_index(name='count')
-        # total_drives = drives.groupby('team').size().reset_index(name='total_drives')
-        # result_percent = pd.merge(result_count, total_drives, on='team')
-        # result_percent['percentage'] = (result_percent['count'] / result_percent['total_drives']) * 100
-        # pivot_table = result_percent.pivot_table(index='team', columns='display_result', values='percentage', fill_value=0)
-        #
-        # drives['is_scoring'] = drives['display_result'].isin(['Touchdown', 'Field Goal'])
-        # scoring_drives = drives.groupby('team')['is_scoring'].mean().reset_index(name='%_scoring_drives')
-        # scoring_drives['%_scoring_drives'] *= 100  # Convert to percentage
-        # final_table = pd.merge(pivot_table, scoring_drives, on='team')
 
         drives = self.drives(year=year, week=week, season_type=season_type, team=None)
 
@@ -1684,11 +1671,34 @@ class Fetch():
                                                  fill_value=0)
 
         drives['is_scoring'] = drives['display_result'].isin(['Touchdown', 'Field Goal'])
-        scoring_drives = drives.groupby(group_cols)['is_scoring'].mean().reset_index(name='%_scoring_drives')
-        scoring_drives['%_scoring_drives'] *= 100  # Convert to percentage
+        scoring_drives = drives.groupby(group_cols)['is_scoring'].mean().reset_index(name='point_%')
+        scoring_drives['point_%'] *= 100  # Convert to percentage
 
-        final_table = pd.merge(pivot_table, scoring_drives, on=group_cols)
-        final_table = final_table.rename(columns={'%_scoring_drives': 'Scoring Drives (%)'})
+        drives['is_turnover'] = drives['display_result'].isin(['Fumble', 'Fumble Return Touchdown', 'Fumble Touchdown', 'Interception', 'Interception Touchdown'])
+        turnover_drives = drives.groupby(group_cols)['is_turnover'].mean().reset_index(name='turnover_%')
+        turnover_drives['turnover_%'] *= 100  # Convert to percentage
+
+        drives['splash_allowed_%'] = drives['display_result'].isin(['Fumble', 'Interception', 'Blocked FG Touchdown', 'Safety', 'Fumble Touchdown', 'Punt Return Touchdown', 'Blocked FG, Downs', 'Interception Touchdown', 'Blocked Punt', 'Fumble Return Touchdown', 'Blocked Punt Touchdown'])
+        splash_drives = drives.groupby(group_cols)['splash_allowed_%'].mean().reset_index()
+        splash_drives['splash_allowed_%'] *= 100
+
+        merged_table = pd.merge(pivot_table, scoring_drives, on=group_cols)
+        merged_table_two = pd.merge(merged_table, turnover_drives)
+        final_table = pd.merge(merged_table_two, splash_drives)
+
+        final_table = final_table.rename(columns={'Blocked Punt': 'blocked_punt_%',
+                                                  'Blocked Punt Touchdown': 'blocked_punt_touchdown_%',
+                                                  'Downs': 'turnover_on_downs_%',
+                                                  'Field Goal': 'field_goal_%',
+                                                  'Fumble': 'fumble_%',
+                                                  'Fumble Touchdown': 'fumble_touchdown_%',
+                                                  'Interception': 'interception_%',
+                                                  'Interception Touchdown': 'interception_touchdown_%',
+                                                  'Missed FG': 'missed_fg_%',
+                                                  'Punt': 'punt_%',
+                                                  'Punt Return Touchdown': 'punt_return_touchdown_%',
+                                                  'Safety': 'safety_%',
+                                                  'Touchdown': 'touchdown_%'})
 
         return final_table
 
@@ -1714,8 +1724,17 @@ class Fetch():
         scoring_drives = drives.groupby(group_cols)['is_scoring'].mean().reset_index(name='%_scoring_drives')
         scoring_drives['%_scoring_drives'] *= 100  # Convert to percentage
 
-        final_table = pd.merge(pivot_table, scoring_drives, on=group_cols)
-        final_table = final_table.rename(columns={'%_scoring_drives': 'Scoring Drives (%)'})
+        drives['is_turnover'] = drives['display_result'].isin(['Fumble', 'Fumble Return Touchdown', 'Fumble Touchdown', 'Interception', 'Interception Touchdown'])
+        turnover_drives = drives.groupby(group_cols)['is_turnover'].mean().reset_index(name='%_turnover')
+        turnover_drives['%_turnover'] *= 100  # Convert to percentage
+
+        drives['splash_forced_%'] = drives['display_result'].isin(['Fumble', 'Interception', 'Blocked FG Touchdown', 'Safety', 'Fumble Touchdown', 'Punt Return Touchdown', 'Blocked FG, Downs', 'Interception Touchdown', 'Blocked Punt', 'Fumble Return Touchdown', 'Blocked Punt Touchdown'])
+        splash_drives = drives.groupby(group_cols)['splash_forced_%'].mean().reset_index()
+        splash_drives['splash_forced_%'] *= 100
+
+        merged_table = pd.merge(pivot_table, scoring_drives, on=group_cols)
+        merged_table_two = pd.merge(merged_table, turnover_drives)
+        final_table = pd.merge(merged_table_two, splash_drives)
 
         final_table = final_table.rename(columns={'opponent': 'defense',
                                                   'Blocked Punt': 'blocked_punt_%',
@@ -1731,7 +1750,8 @@ class Fetch():
                                                   'Punt Return Touchdown': 'punt_return_touchdown_%',
                                                   'Safety': 'forced_safety %',
                                                   'Touchdown': 'touchdown_prevention_%',
-                                                  'Scoring Drives (%)': 'point_prevention_%'})
+                                                  '%_scoring_drives': 'point_prevention_%',
+                                                  '%_turnover': 'forced_turnover_%'})
 
         final_table = final_table.drop(columns = ['End of Game', 'End of Half'])
         final_table['field_goal_prevention_%'] = (1 - (final_table['field_goal_prevention_%'] / 100)) * 100
@@ -2007,8 +2027,72 @@ class Fetch():
 
         pass
 
-    def diff_mov_mol(self, year=None):
-        pass
+    def pd_mov_mod(self, year=None, week=None, season_type=None, team=None):
+
+        boxscore = self.team_boxscore(year, week=None, season_type=None, team=None)
+
+        stat_dict = {'team': [], 'avg_point_differential': [], 'avg_margin_of_victory': [], 'avg_margin_of_defeat': []}
+
+        for team in boxscore.team.unique():
+            team_df = boxscore[boxscore['team'] == team]
+            wins_df = team_df[team_df['result'] == 'W']
+            loss_df = team_df[team_df['result'] == 'L']
+            avg_point_differential = team_df['point_differential'].mean()
+            avg_margin_of_victory = wins_df['point_differential'].mean()
+            avg_margin_of_defeat = loss_df['point_differential'].mean()
+            stat_dict['team'].append(team)
+            stat_dict['avg_point_differential'].append(avg_point_differential)
+            stat_dict['avg_margin_of_victory'].append(avg_margin_of_victory)
+            stat_dict['avg_margin_of_defeat'].append(avg_margin_of_defeat)
+
+        stat_df = pd.DataFrame(stat_dict)
+
+        return stat_df
+
+    def drive_analysis(self, year=None, agg_method=None):
+
+        if agg_method:
+
+            offensive_drives = self.offensive_drive_summary(year=year, agg_method=agg_method)
+            defensive_drives = self.defensive_drive_summary(year=year, agg_method=agg_method)
+            offensive_drives['date'] = pd.to_datetime(offensive_drives['date'])
+            defensive_drives['date'] = pd.to_datetime(defensive_drives['date'])
+            offensive_drives = offensive_drives.sort_values(by = ['team','date'], ascending=True)
+            defensive_drives = defensive_drives.sort_values(by= ['defense', 'date'], ascending=True)
+
+            od = offensive_drives[['team', 'date', 'punt_%', 'touchdown_%', 'point_%', 'turnover_%', 'splash_allowed_%']]
+            dd = defensive_drives[['defense', 'date', 'forced_punt_%', 'touchdown_prevention_%', 'point_prevention_%', 'forced_turnover_%', 'splash_forced_%']]
+
+            dd = dd.rename(columns={'defense': 'team'})
+            total_drive_analysis = pd.merge(od, dd, on=['team', 'date'])
+            total_drive_analysis[total_drive_analysis.select_dtypes(include='number').columns] = total_drive_analysis.select_dtypes(include='number') / 100
+
+            total_drive_analysis['offensive_performance_metric'] = total_drive_analysis['touchdown_%'] + total_drive_analysis['point_%'] - total_drive_analysis['punt_%'] - total_drive_analysis['splash_allowed_%']
+            total_drive_analysis['defensive_performance_metric'] = total_drive_analysis['forced_punt_%'] + total_drive_analysis['touchdown_prevention_%'] + total_drive_analysis['point_prevention_%'] + total_drive_analysis['splash_forced_%']
+            total_drive_analysis['total_performance_metric'] = total_drive_analysis['offensive_performance_metric'] + total_drive_analysis['defensive_performance_metric']
+
+        else:
+
+
+            offensive_drives = self.offensive_drive_summary(year = year, agg_method=agg_method)
+            defensive_drives = self.defensive_drive_summary(year = year, agg_method=agg_method)
+
+            od = offensive_drives[['team', 'punt_%', 'touchdown_%', 'point_%', 'turnover_%', 'splash_allowed_%']]
+            dd = defensive_drives[['defense', 'forced_punt_%', 'touchdown_prevention_%', 'point_prevention_%', 'forced_turnover_%','splash_forced_%']]
+
+
+            dd = dd.rename(columns={'defense':'team'})
+
+            total_drive_analysis = pd.merge(od, dd, on='team')
+            total_drive_analysis[total_drive_analysis.select_dtypes(include='number').columns] = total_drive_analysis.select_dtypes(include='number') / 100
+
+            total_drive_analysis['offensive_performance_metric'] = total_drive_analysis['touchdown_%'] + total_drive_analysis['point_%'] - total_drive_analysis['punt_%'] - total_drive_analysis['splash_allowed_%']
+            total_drive_analysis['defensive_performance_metric'] = total_drive_analysis['forced_punt_%'] + total_drive_analysis['touchdown_prevention_%'] + total_drive_analysis['point_prevention_%'] + total_drive_analysis['splash_forced_%']
+            total_drive_analysis['total_performance_metric'] = total_drive_analysis['offensive_performance_metric'] + total_drive_analysis['defensive_performance_metric']
+
+
+        return total_drive_analysis
+
 
 
 
