@@ -2241,6 +2241,34 @@ class Fetch():
         # drive analysis
         # pd_mov_mod
 
+    def futures(self, year=None):
+
+        futures_dict = {'id': [], 'name': [], 'provider': [], 'athlete': [], 'value': [], 'team': []}
+
+        url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/futures'
+
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            for x in data['items']:
+                id = x['id']
+                name = x['name']
+                provider = x['futures'][0]['provider']['name']
+                for y in x['futures'][0]['books']:
+                    athlete = y.get('athlete', 'NA')
+                    value = y.get('value', 'NA')
+                    team = y.get('team', 'NA')
+                    futures_dict['id'].append(id)
+                    futures_dict['name'].append(name)
+                    futures_dict['provider'].append(provider)
+                    futures_dict['athlete'].append(athlete)
+                    futures_dict['value'].append(value)
+                    futures_dict['team'].append(team)
+
+        futures_df = pd.DataFrame(futures_dict)
+
+        return futures_df
+
 
 
 
