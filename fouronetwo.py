@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 from pprint import pprint
+import re
 
 class Fetch():
 
@@ -473,7 +474,7 @@ class Fetch():
 
         #### need to add in touchdown %
 
-        passing_dict = {'date':[], 'team': [], 'name': [], 'id': [], 'number': [], 'completions_attempts': [], 'yards': [],
+        passing_dict = {'date':[], 'team': [], 'name': [], 'athlete_id': [], 'number': [], 'completions_attempts': [], 'yards': [],
                         'yards_per_attempt': [], 'touchdowns': [], 'interceptions': [], 'sacks': [], 'adjusted_qbr': [],
                         'passer_rating': []}
 
@@ -506,7 +507,7 @@ class Fetch():
                 for x in data['boxscore']['players'][0]['statistics'][0]['athletes']:
                     team = team_list[0]
                     name = x['athlete']['displayName']
-                    id = x['athlete']['id']
+                    athlete_id = x['athlete']['id']
                     number = x['athlete'].get('jersey', 'NA')
                     completions_attempts = x['stats'][0]
                     yards = x['stats'][1]
@@ -519,7 +520,7 @@ class Fetch():
                     passing_dict['date'].append(date)
                     passing_dict['team'].append(team)
                     passing_dict['name'].append(name)
-                    passing_dict['id'].append(id)
+                    passing_dict['athlete_id'].append(athlete_id)
                     passing_dict['number'].append(number)
                     passing_dict['completions_attempts'].append(completions_attempts)
                     passing_dict['yards'].append(yards)
@@ -533,7 +534,7 @@ class Fetch():
                 for x in data['boxscore']['players'][1]['statistics'][0]['athletes']:
                     team = team_list[1]
                     name = x['athlete']['displayName']
-                    id = x['athlete']['id']
+                    athlete_id = x['athlete']['id']
                     number = x['athlete'].get('jersey', 'NA')
                     completions_attempts = x['stats'][0]
                     yards = x['stats'][1]
@@ -546,7 +547,7 @@ class Fetch():
                     passing_dict['date'].append(date)
                     passing_dict['team'].append(team)
                     passing_dict['name'].append(name)
-                    passing_dict['id'].append(id)
+                    passing_dict['athlete_id'].append(athlete_id)
                     passing_dict['number'].append(number)
                     passing_dict['completions_attempts'].append(completions_attempts)
                     passing_dict['yards'].append(yards)
@@ -2001,8 +2002,41 @@ class Fetch():
 
     def players(self):
         pass
+    def qb_epa_glossary(self):
 
-    def qb_epa(self, year=None, season_type=None, week=None):
+        glossary_dict = {'name': [], 'description': []}
+
+        base_url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2024/types/2/weeks/1/qbr/10000'
+
+        response = requests.get(base_url)
+        if response.status_code == 200:
+            data = response.json()
+            for i in data['items'][0]['splits']['categories'][0]['stats']:
+                name = i['displayName']
+                description = i['description']
+                glossary_dict['name'].append(name)
+                glossary_dict['description'].append(description)
+
+        glossary_df = pd.DataFrame(glossary_dict)
+
+        return glossary_df
+
+    def qb_epa(self, year=None, season_type=None, week=None, pivot=None):
+
+        athlete_dict = {'name': [], 'athlete_id': []}
+        pb = self.passing_boxscore(year=year, season_type=season_type, week=week)
+        for name, id in zip(pb.name.unique(), pb.athlete_id.unique()):
+            athlete_dict['name'].append(name)
+            athlete_dict['athlete_id'].append(id)
+
+        athlete_df = pd.DataFrame(athlete_dict)
+
+        epa_dict = {'athlete_id': [], 'id': [], 'points_added': [], 'pass_epa': [], 'rush_epa': [], 'sack_epa': [],
+                    'penalty_epa': [], 'total_epa': [], 'qb_plays': [], 'cwa': [], 'raw_qbr': [],
+                    'expected_pass_epa': [],
+                    'int_epa': [], 'yac_epa': [], 'run_epa': [], 'scramble_epa': [], 'expected_sack_epa': [],
+                    'fumble_epa': [],
+                    'defense_faced_epa': [], 'total_qbr': [], 'unq_rank': []}
 
         if not season_type and not week:
             season_type = 2
@@ -2020,27 +2054,133 @@ class Fetch():
             season_type = season_type
             weeks = week
 
-        total_completed = pd.DataFrame()
-
         for w in weeks:
-            url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/types/{season_type}/weeks/{week}/qbr/10000'
 
-        pass
+            base_url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/types/{season_type}/weeks/{w}/qbr/10000'
+
+            def extract_id(url):
+                match = re.search(r'/(\d+)(?:\?|$)', url)
+                if match:
+                    return match.group(1)
+                return None
+
+            page_index = 1
+            while True:
+                url = f"{base_url}?page={page_index}"
+                print(url)
+                response = requests.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+
+                    for x in data['items']:
+                        athlete_url = x['athlete']['$ref']
+                        event_url = x['event']['$ref']
+                        athlete_id = extract_id(athlete_url)
+                        id = extract_id(event_url)
+                        points_added = x['splits']['categories'][0]['stats'][0]['displayValue']
+                        pass_epa = x['splits']['categories'][0]['stats'][1]['displayValue']
+                        rush_epa = x['splits']['categories'][0]['stats'][2]['displayValue']
+                        sack_epa = x['splits']['categories'][0]['stats'][3]['displayValue']
+                        penalty_epa = x['splits']['categories'][0]['stats'][4]['displayValue']
+                        total_epa = x['splits']['categories'][0]['stats'][5]['displayValue']
+                        qb_plays = x['splits']['categories'][0]['stats'][6]['displayValue']
+                        cwa = x['splits']['categories'][0]['stats'][7]['displayValue']
+                        raw_qbr = x['splits']['categories'][0]['stats'][8]['displayValue']
+                        expected_pass_epa = x['splits']['categories'][0]['stats'][9]['displayValue']
+                        int_epa = x['splits']['categories'][0]['stats'][10]['displayValue']
+                        yac_epa = x['splits']['categories'][0]['stats'][11]['displayValue']
+                        run_epa = x['splits']['categories'][0]['stats'][12]['displayValue']
+                        scramble_epa = x['splits']['categories'][0]['stats'][13]['displayValue']
+                        expected_sack_epa = x['splits']['categories'][0]['stats'][14]['displayValue']
+                        fumble_epa = x['splits']['categories'][0]['stats'][15]['displayValue']
+                        defense_faced_epa = x['splits']['categories'][0]['stats'][16]['displayValue']
+                        total_qbr = x['splits']['categories'][0]['stats'][17]['displayValue']
+                        unq_rank = x['splits']['categories'][0]['stats'][18]['displayValue']
+
+                        epa_dict['athlete_id'].append(athlete_id)
+                        epa_dict['id'].append(id)
+                        epa_dict['points_added'].append(points_added)
+                        epa_dict['pass_epa'].append(pass_epa)
+                        epa_dict['rush_epa'].append(rush_epa)
+                        epa_dict['sack_epa'].append(sack_epa)
+                        epa_dict['penalty_epa'].append(penalty_epa)
+                        epa_dict['total_epa'].append(total_epa)
+                        epa_dict['qb_plays'].append(qb_plays)
+                        epa_dict['cwa'].append(cwa)
+                        epa_dict['raw_qbr'].append(raw_qbr)
+                        epa_dict['expected_pass_epa'].append(expected_pass_epa)
+                        epa_dict['int_epa'].append(int_epa)
+                        epa_dict['yac_epa'].append(yac_epa)
+                        epa_dict['run_epa'].append(run_epa)
+                        epa_dict['scramble_epa'].append(scramble_epa)
+                        epa_dict['expected_sack_epa'].append(expected_sack_epa)
+                        epa_dict['fumble_epa'].append(fumble_epa)
+                        epa_dict['defense_faced_epa'].append(defense_faced_epa)
+                        epa_dict['total_qbr'].append(total_qbr)
+                        epa_dict['unq_rank'].append(unq_rank)
+
+                    if page_index >= data.get('pageCount', 1):
+                        break
+                    page_index += 1
+
+                else:
+                    print(f"Failed to fetch data from {url}")
+                    break
+
+        epa_df = pd.DataFrame(epa_dict)
+        total_df = epa_df.merge(athlete_df, on='athlete_id')
+
+
+        columns_to_float = ['points_added', 'pass_epa', 'rush_epa', 'sack_epa', 'penalty_epa', 'total_epa', 'qb_plays',
+                            'cwa', 'raw_qbr', 'expected_pass_epa', 'int_epa', 'yac_epa', 'run_epa', 'scramble_epa',
+                            'expected_sack_epa', 'fumble_epa', 'defense_faced_epa', 'total_qbr', 'unq_rank']
+
+        total_df[columns_to_float] = total_df[columns_to_float].astype(float)
+
+        epa_pivot = total_df.groupby('name').agg({'points_added': ['mean', 'sum'],
+                                                  'pass_epa': ['mean', 'sum'],
+                                                  'rush_epa': ['mean', 'sum'],
+                                                  'sack_epa': ['mean', 'sum'],
+                                                  'penalty_epa': ['mean', 'sum'],
+                                                  'total_epa': ['mean', 'sum'],
+                                                  'qb_plays': ['mean', 'sum'],
+                                                  'cwa': ['mean', 'sum'],
+                                                  'raw_qbr': ['mean', 'sum'],
+                                                  'expected_pass_epa': ['mean', 'sum'],
+                                                  'int_epa': ['mean', 'sum'],
+                                                  'yac_epa': ['mean', 'sum'],
+                                                  'run_epa': ['mean', 'sum'],
+                                                  'scramble_epa': ['mean', 'sum'],
+                                                  'expected_sack_epa': ['mean', 'sum'],
+                                                  'fumble_epa': ['mean', 'sum'],
+                                                  'defense_faced_epa': ['mean', 'sum'],
+                                                  'total_qbr': ['mean', 'sum'],
+                                                  'unq_rank':  ['mean', 'sum']}).reset_index()
+
+        epa_pivot.columns = ['_'.join(col).strip() for col in epa_pivot.columns.values]
+
+
+        if pivot == True:
+            return epa_pivot
+        else:
+            return total_df
 
     def pd_mov_mod(self, year=None, week=None, season_type=None, team=None):
 
         boxscore = self.team_boxscore(year, week=None, season_type=None, team=None)
 
-        stat_dict = {'team': [], 'avg_point_differential': [], 'avg_margin_of_victory': [], 'avg_margin_of_defeat': []}
+        stat_dict = {'team': [], 'total_point_differential':[], 'avg_point_differential': [], 'avg_margin_of_victory': [], 'avg_margin_of_defeat': []}
 
         for team in boxscore.team.unique():
             team_df = boxscore[boxscore['team'] == team]
             wins_df = team_df[team_df['result'] == 'W']
             loss_df = team_df[team_df['result'] == 'L']
+            total_point_differential = team_df['point_differential'].sum()
             avg_point_differential = team_df['point_differential'].mean()
             avg_margin_of_victory = wins_df['point_differential'].mean()
             avg_margin_of_defeat = loss_df['point_differential'].mean()
             stat_dict['team'].append(team)
+            stat_dict['total_point_differential'].append(total_point_differential)
             stat_dict['avg_point_differential'].append(avg_point_differential)
             stat_dict['avg_margin_of_victory'].append(avg_margin_of_victory)
             stat_dict['avg_margin_of_defeat'].append(avg_margin_of_defeat)
@@ -2093,6 +2233,13 @@ class Fetch():
 
         return total_drive_analysis
 
+    def head_to_head(self, teams = None):
+
+        pass
+        # team boxscore pivot offense
+        # team boxscore pivot defense
+        # drive analysis
+        # pd_mov_mod
 
 
 
