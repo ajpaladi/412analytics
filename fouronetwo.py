@@ -2559,6 +2559,18 @@ class Fetch():
         athlete_df = pd.DataFrame(athlete_overview_dict)
         return athlete_df
 
+    def athlete_notes(self, year=None, athlete=None):
+        pass
+
+    def athlete_contracts(self, year=None, athlete=None):
+        pass
+
+    def athlete_statistics(self, year=None, athlete=None):
+        pass
+
+    def athlete_splits(self, year=None, athlete=None):
+        pass
+
 
 
 
