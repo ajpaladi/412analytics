@@ -2313,12 +2313,14 @@ class Fetch():
     def ats(self, year=None):
         pass
 
-    def athletes(self, year=None):
+    def athletes(self, year=None, active=None):
 
         ###### parallelize ######
 
-        # Define the base URL for fetching athlete data
-        base_url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/athletes?&active=True&limit=1000'
+        if active == True:
+            base_url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/athletes?&active=True&limit=1000'
+        else:
+            base_url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/athletes?&limit=1000'
 
         # Initialize an empty list to store athlete IDs
         athlete_id_list = []
@@ -2425,11 +2427,24 @@ class Fetch():
 
         return athlete_df
 
-    def athlete_dict(self, year=None):
-        pass
+    def athlete_dict(self):
+
+        # need to refresh this every season
+        athlete_df = pd.read_csv('athlete_dict.csv')
+        athlete_dict = athlete_df.set_index('name')['id'].to_dict()
+
+        return athlete_dict
+
+    def _refresh_athlete_dict(self, year=None):
+
+        print('\n this could take awhile ... ')
+
+        athletes = self.athletes(year=year)
+        athlete_id_name = athletes[['id', 'name']].to_csv('athlete_dict.csv')
 
     def team_dict(self, year=None):
         pass
+
 
     def injury_status(self, athlete=None):
         pass
