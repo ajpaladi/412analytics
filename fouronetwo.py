@@ -4,6 +4,7 @@ from tqdm import tqdm
 from pprint import pprint
 from concurrent.futures import ThreadPoolExecutor
 import re
+from datetime import datetime
 
 class Fetch():
 
@@ -2445,9 +2446,119 @@ class Fetch():
     def team_dict(self, year=None):
         pass
 
-
     def injury_status(self, athlete=None):
         pass
+
+    def athlete_summary(self, year=None, athlete=None):
+
+        if not year:
+            year = datetime.now().year
+
+        if not isinstance(athlete, list):
+            athlete = [athlete]
+
+        athlete_overview_dict = {'id': [], 'name': [], 'weight': [], 'height': [], 'display_height': [], 'age': [],
+                                 'date_of_birth': [], 'debut_year': [],
+                                 'birth_city': [],
+                                 'birth_state': [], 'birth_country': [], 'college': [], 'headshot': [], 'jersey': [],
+                                 'position': [], 'position_abbv': [],
+                                 'injury_status': [], 'injury_date': [], 'injury_link': [], 'injury_type': [],
+                                 'injury_return_date': [],
+                                 'injury_location': [], 'injury_detail': [], 'injury_side': [], 'team': [],
+                                 'experience': [], 'active': [], 'draft_round': [], 'draft_year': [],
+                                 'draft_selection': [], 'draft_team': [], 'status': []}
+
+        for name in athlete:
+
+            athlete_dict = self.athlete_dict()
+            athlete_id = athlete_dict.get(name)
+
+            url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/athletes/{athlete_id}?lang=en&region=us'
+            print(url)
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                name = data['fullName']
+                weight = data.get('weight', None)
+                height = data.get('height', None)
+                display_height = data.get('displayHeight', None)
+                age = data.get('age', None)
+                date_of_birth = data.get('dateOfBirth', None)
+                debut_year = data.get('debutYear', None)
+
+                birth_city = data.get('birthPlace', {}).get('city', None)
+                birth_state = data.get('birthPlace', {}).get('state', None)
+                birth_country = data.get('birthPlace', {}).get('country', None)
+
+                college = data.get('college', {}).get('$ref', None)
+                headshot = data.get('headshot', {}).get('href', None)
+                jersey = data.get('jersey', None)
+
+                position = data.get('position', {}).get('name', None)
+                position_abbv = data.get('position', {}).get('abbreviation', None)
+
+                # Check if there are injuries before accessing
+                if data.get('injuries') and len(data['injuries']) > 0:
+                    injury_status = data['injuries'][0].get('status', None)
+                    injury_date = data['injuries'][0].get('date', None)
+                    injury_link = data['injuries'][0].get('$ref', None)
+                    injury_type = data['injuries'][0].get('details', {}).get('type', None)
+                    injury_return_date = data['injuries'][0].get('details', {}).get('returnDate', None)
+                    injury_location = data['injuries'][0].get('details', {}).get('location', None)
+                    injury_detail = data['injuries'][0].get('details', {}).get('detail', None)
+                    injury_side = data['injuries'][0].get('details', {}).get('side', None)
+                else:
+                    injury_status = injury_date = injury_link = injury_type = injury_return_date = None
+                    injury_location = injury_detail = injury_side = None
+
+                team = data.get('team', {}).get('$ref', None)
+                experience = data.get('experience', {}).get('years', None)
+                active = data.get('active', None)
+
+                draft_round = data.get('draft', {}).get('round', None)
+                draft_year = data.get('draft', {}).get('year', None)
+                draft_selection = data.get('draft', {}).get('selection', None)
+                draft_team = data.get('draft', {}).get('team', {}).get('$ref', None)
+
+                status = data.get('status', {}).get('name', None)
+
+                athlete_overview_dict['id'].append(athlete_id)
+                athlete_overview_dict['name'].append(name)
+                athlete_overview_dict['weight'].append(weight)
+                athlete_overview_dict['height'].append(height)
+                athlete_overview_dict['display_height'].append(display_height)
+                athlete_overview_dict['age'].append(age)
+                athlete_overview_dict['date_of_birth'].append(date_of_birth)
+                athlete_overview_dict['debut_year'].append(draft_year)
+                athlete_overview_dict['birth_city'].append(birth_city)
+                athlete_overview_dict['birth_state'].append(birth_state)
+                athlete_overview_dict['birth_country'].append(birth_country)
+                athlete_overview_dict['college'].append(college)
+                athlete_overview_dict['headshot'].append(headshot)
+                athlete_overview_dict['jersey'].append(jersey)
+                athlete_overview_dict['position'].append(position)
+                athlete_overview_dict['position_abbv'].append(position_abbv)
+                athlete_overview_dict['injury_status'].append(injury_status)
+                athlete_overview_dict['injury_date'].append(injury_date)
+                athlete_overview_dict['injury_link'].append(injury_link)
+                athlete_overview_dict['injury_type'].append(injury_type)
+                athlete_overview_dict['injury_return_date'].append(injury_return_date)
+                athlete_overview_dict['injury_location'].append(injury_location)
+                athlete_overview_dict['injury_detail'].append(injury_detail)
+                athlete_overview_dict['injury_side'].append(injury_side)
+                athlete_overview_dict['team'].append(team)
+                athlete_overview_dict['experience'].append(experience)
+                athlete_overview_dict['active'].append(active)
+                athlete_overview_dict['draft_round'].append(draft_round)
+                athlete_overview_dict['draft_year'].append(draft_year)
+                athlete_overview_dict['draft_selection'].append(draft_selection)
+                athlete_overview_dict['draft_team'].append(draft_team)
+                athlete_overview_dict['status'].append(status)
+
+        athlete_df = pd.DataFrame(athlete_overview_dict)
+        return athlete_df
+
 
 
 
