@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 from pprint import pprint
+from concurrent.futures import ThreadPoolExecutor
 import re
 
 class Fetch():
@@ -474,7 +475,7 @@ class Fetch():
 
         #### need to add in touchdown %
 
-        passing_dict = {'date':[], 'team': [], 'name': [], 'athlete_id': [], 'number': [], 'completions_attempts': [], 'yards': [],
+        passing_dict = {'date':[], 'team': [], 'home_team':[], 'away_team':[], 'name': [], 'athlete_id': [], 'number': [], 'completions_attempts': [], 'yards': [],
                         'yards_per_attempt': [], 'touchdowns': [], 'interceptions': [], 'sacks': [], 'adjusted_qbr': [],
                         'passer_rating': []}
 
@@ -519,6 +520,8 @@ class Fetch():
                     passer_rating = x['stats'][7]
                     passing_dict['date'].append(date)
                     passing_dict['team'].append(team)
+                    passing_dict['home_team'].append(home_team)
+                    passing_dict['away_team'].append(away_team)
                     passing_dict['name'].append(name)
                     passing_dict['athlete_id'].append(athlete_id)
                     passing_dict['number'].append(number)
@@ -546,6 +549,8 @@ class Fetch():
                     passer_rating = x['stats'][7]
                     passing_dict['date'].append(date)
                     passing_dict['team'].append(team)
+                    passing_dict['home_team'].append(home_team)
+                    passing_dict['away_team'].append(away_team)
                     passing_dict['name'].append(name)
                     passing_dict['athlete_id'].append(athlete_id)
                     passing_dict['number'].append(number)
@@ -559,6 +564,17 @@ class Fetch():
                     passing_dict['passer_rating'].append(passer_rating)
 
         passing_df = pd.DataFrame(passing_dict)
+
+        def assign_opponent(row):
+            if row['team'] == row['home_team']:
+                row['opponent'] = row['away_team']
+            else:
+                row['opponent'] = row['home_team']
+            return row
+
+        passing_df = passing_df.apply(assign_opponent, axis=1)
+        passing_df = passing_df.drop(columns={'home_team', 'away_team'})
+
         passing_df[['completions', 'attempts']] = passing_df['completions_attempts'].str.split('/', expand=True)
         passing_df[['times_sacked', 'sack_yards']] = passing_df['sacks'].str.split('-', expand=True)
         passing_df[['yards_per_attempt', 'adjusted_qbr', 'passer_rating']] = passing_df[['yards_per_attempt', 'adjusted_qbr', 'passer_rating']].replace('--', 0)
@@ -2002,6 +2018,7 @@ class Fetch():
 
     def players(self):
         pass
+
     def qb_epa_glossary(self):
 
         glossary_dict = {'name': [], 'description': []}
@@ -2167,7 +2184,7 @@ class Fetch():
 
     def pd_mov_mod(self, year=None, week=None, season_type=None, team=None):
 
-        boxscore = self.team_boxscore(year, week=None, season_type=None, team=None)
+        boxscore = self.team_boxscore(year, week=week, season_type=season_type, team=team)
 
         stat_dict = {'team': [], 'total_point_differential':[], 'avg_point_differential': [], 'avg_margin_of_victory': [], 'avg_margin_of_defeat': []}
 
@@ -2233,6 +2250,30 @@ class Fetch():
 
         return total_drive_analysis
 
+    def qb_stats_allowed(self, year=None, week=None, season_type=None, team=None):
+
+        passing_boxscore = self.passing_boxscore(year=year, week=week, season_type=season_type, team=team)
+
+        stats_allowed_pivot = passing_boxscore.groupby('opponent').agg({'yards': ['sum'],
+                                                           'yards_per_attempt': ['mean'],
+                                                           'yards_per_completion':['mean'],
+                                                           'touchdowns':  ['sum'],
+                                                           'touchdown_%': ['mean'],
+                                                           'interceptions': ['sum'],
+                                                           'adjusted_qbr': ['mean'],
+                                                           'passer_rating': ['mean'],
+                                                           'completion_%': ['mean']}).reset_index()
+
+        stats_allowed_pivot.columns = ['_'.join(col).strip() for col in stats_allowed_pivot.columns.values]
+
+        return stats_allowed_pivot
+
+    def rb_stats_allowed(self):
+        pass
+
+    def receiving_stat_allowed(self):
+        pass
+
     def head_to_head(self, teams = None):
 
         pass
@@ -2268,6 +2309,130 @@ class Fetch():
         futures_df = pd.DataFrame(futures_dict)
 
         return futures_df
+
+    def ats(self, year=None):
+        pass
+
+    def athletes(self, year=None):
+
+        ###### parallelize ######
+
+        # Define the base URL for fetching athlete data
+        base_url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/athletes?&active=True&limit=1000'
+
+        # Initialize an empty list to store athlete IDs
+        athlete_id_list = []
+
+        # Initialize page index for pagination
+        page_index = 1
+        while True:
+            url = f"{base_url}&page={page_index}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                # Loop through each athlete and extract the athlete ID from the URL
+                for x in data['items']:
+                    athlete_url = x['$ref']
+                    athlete_id = re.search(r'/athletes/(\d+)', athlete_url).group(1)
+                    athlete_id_list.append(athlete_id)
+                # Break the loop when all pages have been fetched
+                if page_index >= data['pageCount']:
+                    break
+                page_index += 1
+            else:
+                print(f"Failed to fetch data from {url}, status code: {response.status_code}")
+                break
+
+        # Function to fetch athlete data for a single athlete ID
+        def fetch_athlete_data(id):
+            url = f'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{year}/athletes/{id}?lang=en&region=us'
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                name = data['fullName']
+                weight = data.get('weight', None)
+                height = data.get('height', None)
+                display_height = data.get('displayHeight', None)
+                age = data.get('age', None)
+                date_of_birth = data.get('dateOfBirth', None)
+                debut_year = data.get('debutYear', None)
+
+                birth_city = data.get('birthPlace', {}).get('city', None)
+                birth_state = data.get('birthPlace', {}).get('state', None)
+                birth_country = data.get('birthPlace', {}).get('country', None)
+
+                college = data.get('college', {}).get('$ref', None)
+                headshot = data.get('headshot', {}).get('href', None)
+                jersey = data.get('jersey', None)
+
+                position = data.get('position', {}).get('name', None)
+                position_abbv = data.get('position', {}).get('abbreviation', None)
+
+                # Check if there are injuries before accessing
+                if data.get('injuries') and len(data['injuries']) > 0:
+                    injury_status = data['injuries'][0].get('status', None)
+                    injury_date = data['injuries'][0].get('date', None)
+                    injury_link = data['injuries'][0].get('$ref', None)
+                    injury_type = data['injuries'][0].get('details', {}).get('type', None)
+                    injury_return_date = data['injuries'][0].get('details', {}).get('returnDate', None)
+                    injury_location = data['injuries'][0].get('details', {}).get('location', None)
+                    injury_detail = data['injuries'][0].get('details', {}).get('detail', None)
+                    injury_side = data['injuries'][0].get('details', {}).get('side', None)
+                else:
+                    injury_status = injury_date = injury_link = injury_type = injury_return_date = None
+                    injury_location = injury_detail = injury_side = None
+
+                team = data.get('team', {}).get('$ref', None)
+                experience = data.get('experience', {}).get('years', None)
+                active = data.get('active', None)
+
+                draft_round = data.get('draft', {}).get('round', None)
+                draft_year = data.get('draft', {}).get('year', None)
+                draft_selection = data.get('draft', {}).get('selection', None)
+                draft_team = data.get('draft', {}).get('team', {}).get('$ref', None)
+
+                status = data.get('status', {}).get('name', None)
+
+                return {
+                    'id': id, 'name': name, 'weight': weight, 'height': height, 'display_height': display_height,
+                    'age': age, 'date_of_birth': date_of_birth, 'debut_year': debut_year, 'birth_city': birth_city,
+                    'birth_state': birth_state, 'birth_country': birth_country, 'college': college,
+                    'headshot': headshot,
+                    'jersey': jersey, 'position': position, 'position_abbv': position_abbv,
+                    'injury_status': injury_status,
+                    'injury_date': injury_date, 'injury_link': injury_link, 'injury_type': injury_type,
+                    'injury_return_date': injury_return_date, 'injury_location': injury_location,
+                    'injury_detail': injury_detail,
+                    'injury_side': injury_side, 'team': team, 'experience': experience, 'active': active,
+                    'draft_round': draft_round, 'draft_year': draft_year, 'draft_selection': draft_selection,
+                    'draft_team': draft_team, 'status': status
+                }
+            else:
+                return None
+
+        # Use ThreadPoolExecutor to parallelize the API requests
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Wrap tqdm around the athlete_id_list for progress tracking
+            results = list(tqdm(executor.map(fetch_athlete_data, athlete_id_list), total=len(athlete_id_list),
+                                desc="Fetching athlete data"))
+
+        # Filter out any None results (failed requests)
+        results = [r for r in results if r is not None]
+
+        # Convert the list of dictionaries to a DataFrame
+        athlete_df = pd.DataFrame(results)
+
+        return athlete_df
+
+    def athlete_dict(self, year=None):
+        pass
+
+    def team_dict(self, year=None):
+        pass
+
+    def injury_status(self, athlete=None):
+        pass
 
 
 
