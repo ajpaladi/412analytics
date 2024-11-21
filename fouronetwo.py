@@ -5,6 +5,8 @@ from pprint import pprint
 from concurrent.futures import ThreadPoolExecutor
 import re
 from datetime import datetime
+from itertools import combinations
+import joblib
 
 class Fetch():
 
@@ -1575,7 +1577,7 @@ class Fetch():
 
     def drives(self,  year, week=None, season_type=None, team=None, pivot=None):
 
-        drive_dict = {'team': [], 'home_team':[], 'away_team':[], 'date':[], 'drive_id': [], 'description': [], 'start_time': [], 'end_time': [],
+        drive_dict = {'team': [], 'home_team':[], 'away_team':[], 'home_score':[], 'away_score':[], 'date':[], 'drive_id': [], 'description': [], 'start_time': [], 'end_time': [],
                       'start_yardline': [], 'end_yardline': [], 'start_period': [], 'end_period': [],
                       'time_elapsed': [], 'yards': [], 'score': [], 'offensive_plays': [],
                       'result': [], 'display_result': []}
@@ -1602,25 +1604,27 @@ class Fetch():
                 data = response.json()
 
                 for x in data['drives']['previous']:
-                    team = x['team']['displayName']
-                    drive_id = x['id']
-                    description = x['description']
-                    start_time = x['start']['clock']['displayValue']
+                    team = x['team'].get('displayName', 'NA')  # Safely get 'displayName', or 'NA' if missing
+                    drive_id = x.get('id', 'NA')
+                    description = x.get('description', 'NA')
+                    start_time = x.get('start', {}).get('clock', {}).get('displayValue', 'NA')
                     end_time = x.get('end', {}).get('clock', {}).get('displayValue', 'NA')
-                    start_yardline = x['start']['text']
-                    end_yardline = x['end']['text']
-                    start_period = x['start']['period']['number']
-                    end_period = x['end']['period']['number']
-                    time_elapsed = x['timeElapsed']['displayValue']
-                    yards = x['yards']
-                    score = x['isScore']
-                    offensive_plays = x['offensivePlays']
-                    result = x['result']
-                    display_result = x['displayResult']
+                    start_yardline = x.get('start', {}).get('text', 'NA')
+                    end_yardline = x.get('end', {}).get('text', 'NA')
+                    start_period = x.get('start', {}).get('period', {}).get('number', 'NA')
+                    end_period = x.get('end', {}).get('period', {}).get('number', 'NA')
+                    time_elapsed = x.get('timeElapsed', {}).get('displayValue', 'NA')
+                    yards = x.get('yards', 'NA')
+                    score = x.get('isScore', 'NA')
+                    offensive_plays = x.get('offensivePlays', 'NA')
+                    result = x.get('result', 'NA')
+                    display_result = x.get('displayResult', 'NA')
 
                     drive_dict['team'].append(team)
                     drive_dict['home_team'].append(home_team)
                     drive_dict['away_team'].append(away_team)
+                    drive_dict['home_score'].append(home_score)
+                    drive_dict['away_score'].append(away_score)
                     drive_dict['date'].append(date)
                     drive_dict['drive_id'].append(drive_id)
                     drive_dict['description'].append(description)
@@ -1642,20 +1646,26 @@ class Fetch():
 
         def assign_points_and_opponent(row):
             if row['team'] == row['home_team']:
+                row['points'] = row['home_score']
+                row['points_allowed'] = row['away_score']
                 row['opponent'] = row['away_team']
             else:
+                row['points'] = row['away_score']
+                row['points_allowed'] = row['home_score']
                 row['opponent'] = row['home_team']
             return row
 
         drive_df = drive_df.apply(assign_points_and_opponent, axis=1)
-        drive_df = drive_df.drop(columns = ['home_team', 'away_team'])
+        drive_df = drive_df.drop(columns = ['home_team', 'away_team', 'home_score', 'away_score'])
         drive_df = drive_df.sort_values(by = 'team', ascending = True)
 
-
-        columns_to_int = ['yards', 'offensive_plays']
+        columns_to_int = ['yards', 'offensive_plays', 'points', 'points_allowed']
         drive_df[columns_to_int] = drive_df[columns_to_int].astype(int)
         drive_df['time_elapsed'] = '00:' + drive_df['time_elapsed']
         drive_df['time_elapsed'] = pd.to_timedelta(drive_df['time_elapsed'])
+
+        drive_df['result'] = ['W' if points > points_allowed else 'L' for points, points_allowed in
+                                      zip(drive_df['points'], drive_df['points_allowed'])]
 
         drive_pivot = drive_df.groupby('team').agg({'yards': ['mean', 'sum'],
                                                   'offensive_plays': ['mean', 'sum'],
@@ -1677,7 +1687,7 @@ class Fetch():
         # Determine whether to aggregate weekly or yearly
         if agg_method == 'weekly':
             # Assume you have a 'date' or 'week' column in the dataframe
-            group_cols = ['team', 'date']  # Using 'week' as an example, replace with 'date' if needed
+            group_cols = ['team', 'opponent', 'result', 'date']  # Using 'week' as an example, replace with 'date' if needed
         else:
             group_cols = ['team']
 
@@ -1727,7 +1737,7 @@ class Fetch():
         # Determine whether to aggregate weekly or yearly
         if agg_method == 'weekly':
             # Assume you have a 'date' or 'week' column in the dataframe
-            group_cols = ['opponent', 'date']  # Using 'week' as an example, replace with 'date' if needed
+            group_cols = ['opponent', 'team', 'date']  # Using 'week' as an example, replace with 'date' if needed
         else:
             group_cols = ['opponent']
 
@@ -1775,6 +1785,8 @@ class Fetch():
         final_table['field_goal_prevention_%'] = (1 - (final_table['field_goal_prevention_%'] / 100)) * 100
         final_table['touchdown_prevention_%'] = (1 - (final_table['touchdown_prevention_%'] / 100)) * 100
         final_table['point_prevention_%'] = (1 - (final_table['point_prevention_%'] / 100)) * 100
+
+        final_table = final_table.rename(columns = {'team': 'opponent'})
 
         return final_table
 
@@ -2218,10 +2230,10 @@ class Fetch():
             offensive_drives = offensive_drives.sort_values(by = ['team','date'], ascending=True)
             defensive_drives = defensive_drives.sort_values(by= ['defense', 'date'], ascending=True)
 
-            od = offensive_drives[['team', 'date', 'punt_%', 'touchdown_%', 'point_%', 'turnover_%', 'splash_allowed_%']]
+            od = offensive_drives[['team', 'opponent', 'result', 'date', 'punt_%', 'touchdown_%', 'point_%', 'turnover_%', 'splash_allowed_%']]
             dd = defensive_drives[['defense', 'date', 'forced_punt_%', 'touchdown_prevention_%', 'point_prevention_%', 'forced_turnover_%', 'splash_forced_%']]
-
             dd = dd.rename(columns={'defense': 'team'})
+
             total_drive_analysis = pd.merge(od, dd, on=['team', 'date'])
             total_drive_analysis[total_drive_analysis.select_dtypes(include='number').columns] = total_drive_analysis.select_dtypes(include='number') / 100
 
@@ -2272,7 +2284,7 @@ class Fetch():
     def rb_stats_allowed(self):
         pass
 
-    def receiving_stat_allowed(self):
+    def receiving_stats_allowed(self):
         pass
 
     def head_to_head(self, teams = None):
@@ -2571,9 +2583,84 @@ class Fetch():
     def athlete_splits(self, year=None, athlete=None):
         pass
 
+    def piecewise_comparison(self, drive_summary=None):
 
+        ## accepts the input of the drive analysis function
+        # Get all unique teams
 
+        drive_summary['result'] = drive_summary['result'].map({'W': 1, 'L': 0})
+        teams = drive_summary['team'].unique()
 
+        # Generate all possible team matchups
+        matchups = []
+        for team_a, team_b in combinations(teams, 2):  # Pairwise combinations of teams
+            team_a_games = drive_summary[drive_summary['team'] == team_a]
+            team_b_games = drive_summary[drive_summary['team'] == team_b]
+
+            # Create pairwise matchups for all games between the two teams
+            for _, team_a_game in team_a_games.iterrows():
+                for _, team_b_game in team_b_games.iterrows():
+                    matchup = {
+                        **{f"Team_A_{col}": team_a_game[col] for col in drive_summary.columns if
+                           col not in ['team', 'opponent', 'date', 'result']},
+                        **{f"Team_B_{col}": team_b_game[col] for col in drive_summary.columns if
+                           col not in ['team', 'opponent', 'date', 'result']},
+                        "Result": 1 if team_a_game['result'] == 1 and team_b_game['result'] == 0 else 0
+                    }
+                    matchups.append(matchup)
+
+        # Convert to DataFrame
+        general_matchup_df = pd.DataFrame(matchups)
+
+        return general_matchup_df
+
+    def random_forest_classification_train(self, general_matchup_df=None, save=False):
+
+        # Prepare the data
+
+        X = general_matchup_df.drop(columns=['Result'])  # Features
+        y = general_matchup_df['Result']  # Target
+
+        # Train-test split
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # Train the model
+        from sklearn.ensemble import RandomForestClassifier
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+
+        # Evaluate the model
+        from sklearn.metrics import accuracy_score, classification_report
+        y_pred = model.predict(X_test)
+        print(f"Accuracy: {accuracy_score(y_test, y_pred):.2f}")
+        print(classification_report(y_test, y_pred))
+
+        # Step 4: Save the trained model
+        joblib.dump(model, 'random_forest_matchup_model.pkl')
+        print("Model saved as 'random_forest_matchup_model.pkl'")
+
+    def outcome_prediction(self, drive_summary=None, team_a=None, team_b=None):
+
+        # Load the trained model
+        import joblib
+        model = joblib.load('random_forest_matchup_model.pkl')
+
+        # Function to create a matchup for prediction
+        numeric_columns = [col for col in drive_summary.select_dtypes(include=['float64', 'int64']).columns if
+                           col != 'result']
+        team_a_stats = drive_summary[drive_summary['team'] == team_a][numeric_columns].mean()
+        team_b_stats = drive_summary[drive_summary['team'] == team_b][numeric_columns].mean()
+
+        matchup = {
+            **{f"Team_A_{col}": team_a_stats[col] for col in numeric_columns},
+            **{f"Team_B_{col}": team_b_stats[col] for col in numeric_columns}
+        }
+
+        matchup_df = pd.DataFrame([matchup])
+        prediction = model.predict(matchup_df)
+        print(prediction)
+        return "Team A Wins" if prediction[0] == 1 else "Team B Wins"
 
 
 
